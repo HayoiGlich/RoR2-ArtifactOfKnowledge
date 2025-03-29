@@ -1,4 +1,4 @@
-﻿using BepInEx;
+using BepInEx;
 using R2API.Utils;
 using UnityEngine;
 using BepInEx.Configuration;
@@ -9,6 +9,7 @@ using System.Linq;
 using UnityEngine.AddressableAssets;
 using System;
 using RoR2;
+using R2API;
 
 [assembly: HG.Reflection.SearchableAttribute.OptIn]
 
@@ -18,13 +19,13 @@ namespace ThinkInvisible.ArtifactOfKnowledge {
     [BepInDependency(TILER2Plugin.ModGuid, TILER2Plugin.ModVer)]
     [NetworkCompatibility(CompatibilityLevel.EveryoneMustHaveMod, VersionStrictness.EveryoneNeedSameModVersion)]
     public class ArtifactOfKnowledgePlugin : BaseUnityPlugin {
-        public const string ModVer = "3.0.1";
+        public const string ModVer = "4.0.0";
         public const string ModName = "ArtifactOfKnowledge";
         public const string ModGuid = "com.ThinkInvisible.ArtifactOfKnowledge";
 
         internal static ConfigFile cfgFile;
 
-        internal static FilingDictionary<T2Module> allModules = new FilingDictionary<T2Module>();
+        internal static FilingDictionary<T2Module> allModules = new();
 
         internal static BepInEx.Logging.ManualLogSource _logger;
 
@@ -67,8 +68,8 @@ namespace ThinkInvisible.ArtifactOfKnowledge {
             public int RerollsPerStage { get; internal set; } = 3;
         }
 
-        public static ServerConfigContainer ServerConfig { get; private set; } = new ServerConfigContainer();
-        public static ClientConfigContainer ClientConfig { get; private set; } = new ClientConfigContainer();
+        public static ServerConfigContainer ServerConfig { get; private set; } = new();
+        public static ClientConfigContainer ClientConfig { get; private set; } = new();
 
         public static ItemTierDef MetaItemTier { get; private set; }
 
@@ -81,7 +82,7 @@ namespace ThinkInvisible.ArtifactOfKnowledge {
             try {
                 UnstubShaders();
             } catch(Exception ex) {
-                _logger.LogError($"Shader unstub failed: {ex} {ex.Message}");
+                _logger.LogError($"Shader unstub failed: {ex}");
             }
 
             cfgFile = new ConfigFile(Path.Combine(Paths.ConfigPath, ModGuid + ".cfg"), true);
@@ -91,10 +92,10 @@ namespace ThinkInvisible.ArtifactOfKnowledge {
 
             ClientConfig.ConfigEntryChanged += (newValueBoxed, eventArgs) => {
                 if(eventArgs.target.boundProperty.Name == nameof(ClientConfigContainer.XpBarLocation) && Run.instance && KnowledgeArtifact.instance.IsActiveAndEnabled()) {
-                    foreach(var hud in GameObject.FindObjectsOfType<RoR2.UI.HUD>()) {
+                    foreach(var hud in UnityEngine.Object.FindObjectsOfType<RoR2.UI.HUD>()) {
                         KnowledgeXpBar.ModifyHud(hud);
                     }
-                    foreach(var kcm in GameObject.FindObjectsOfType<KnowledgeCharacterManager>()) {
+                    foreach(var kcm in UnityEngine.Object.FindObjectsOfType<KnowledgeCharacterManager>()) {
                         kcm.ClientUpdateXpBar();
                     }
                 }
@@ -103,14 +104,15 @@ namespace ThinkInvisible.ArtifactOfKnowledge {
             MetaItemTier = resources.LoadAsset<ItemTierDef>("Assets/ArtifactOfKnowledge/ScriptableObjects/MetaItemTier.asset");
             var metaColor = new Color(0.1f, 0.05f, 0.7f);
             var metaColorDark = new Color(0.05f, 0.025f, 0.4f);
-            //MetaItemTier.colorIndex = R2API.ColorsAPI.RegisterColor(metaColor);
-            //MetaItemTier.darkColorIndex = R2API.ColorsAPI.RegisterColor(metaColorDark);
+            
             MetaItemTier.colorIndex = ColorCatalog.ColorIndex.LunarItem;
             MetaItemTier.darkColorIndex = ColorCatalog.ColorIndex.LunarItemDark;
 
             ModifyItemTierPrefabs(metaColor);
 
-            R2API.ContentAddition.AddItemTierDef(MetaItemTier);
+            ItemTierCatalog.availability.CallWhenAvailable(() => {
+                ContentAddition.AddItemTierDef(MetaItemTier);
+            });
 
             var modInfo = new T2Module.ModInfo {
                 displayName = "Artifact of Knowledge",
@@ -120,24 +122,27 @@ namespace ThinkInvisible.ArtifactOfKnowledge {
             };
             allModules = T2Module.InitAll<T2Module>(modInfo);
 
-            earlyLoad = new T2Module[] { };
+            earlyLoad = Array.Empty<T2Module>();
             T2Module.SetupAll_PluginAwake(earlyLoad);
             T2Module.SetupAll_PluginAwake(allModules.Except(earlyLoad));
         }
 
         void ModifyItemTierPrefabs(Color metaColor) {
-            var highlight = R2API.PrefabAPI.InstantiateClone(Addressables.LoadAssetAsync<GameObject>("RoR2/Base/UI/HighlightLunarItem.prefab").WaitForCompletion(), "AKNOWTmpSetupPrefab", false);
+            var highlight = PrefabAPI.InstantiateClone(Addressables.LoadAssetAsync<GameObject>("RoR2/Base/UI/HighlightLunarItem.prefab").WaitForCompletion(), "AKNOWTmpSetupPrefab", false);
 
             highlight.GetComponent<RoR2.UI.HighlightRect>().highlightColor = metaColor;
 
-            highlight = R2API.PrefabAPI.InstantiateClone(highlight, "AKNOWMetaHighlight", false);
+            highlight = PrefabAPI.InstantiateClone(highlight, "AKNOWMetaHighlight", false);
             MetaItemTier.highlightPrefab = highlight;
 
-
-            var droplet = R2API.PrefabAPI.InstantiateClone(Addressables.LoadAssetAsync<GameObject>("RoR2/Base/Common/LunarOrb.prefab").WaitForCompletion(), "AKNOWTmpSetupPrefab", false);
+            var droplet = PrefabAPI.InstantiateClone(Addressables.LoadAssetAsync<GameObject>("RoR2/Base/Common/LunarOrb.prefab").WaitForCompletion(), "AKNOWTmpSetupPrefab", false);
 
             var tr = droplet.transform.Find("VFX").GetComponent<TrailRenderer>();
-            tr.colorGradient.colorKeys[0] = new GradientColorKey(metaColor, tr.colorGradient.colorKeys[0].time);
+            var gradient = tr.colorGradient;
+            var colorKeys = gradient.colorKeys;
+            colorKeys[0] = new GradientColorKey(metaColor, colorKeys[0].time);
+            gradient.colorKeys = colorKeys;
+            tr.colorGradient = gradient;
 
             var coreps = droplet.transform.Find("VFX/Core").GetComponent<ParticleSystem>();
             var ccol = coreps.colorOverLifetime;
@@ -154,16 +159,18 @@ namespace ThinkInvisible.ArtifactOfKnowledge {
             ccolColor.gradientMax.colorKeys[0] = new GradientColorKey(metaColor, ccolColor.gradientMax.colorKeys[0].time);
             ccol.color = ccolColor;
 
-            droplet = R2API.PrefabAPI.InstantiateClone(droplet, "AKNOWMetaDroplet", false);
+            droplet = PrefabAPI.InstantiateClone(droplet, "AKNOWMetaDroplet", false);
             MetaItemTier.dropletDisplayPrefab = droplet;
         }
 
         private void UnstubShaders() {
             var materials = resources.LoadAllAssets<Material>();
-            foreach(Material material in materials)
-                if(material.shader.name.StartsWith("STUB_"))
-                    material.shader = Addressables.LoadAssetAsync<Shader>(material.shader.name.Substring(5))
+            foreach(Material material in materials) {
+                if(material.shader.name.StartsWith("STUB_")) {
+                    material.shader = Addressables.LoadAssetAsync<Shader>(material.shader.name[5..])
                         .WaitForCompletion();
+                }
+            }
         }
 
         [System.Diagnostics.CodeAnalysis.SuppressMessage("CodeQuality", "IDE0051:Remove unused private members", Justification = "Used by Unity Engine.")]
