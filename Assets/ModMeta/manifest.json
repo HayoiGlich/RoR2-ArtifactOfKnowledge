@@ -1,6 +1,6 @@
 {
   "name": "ArtifactOfKnowledge",
-  "version_number": "3.0.1",
+  "version_number": "4.0.1",
   "website_url": "https://github.com/ThinkInvis/RoR2-ArtifactOfKnowledge",
   "description": "A Command/Sacrifice-like Artifact based heavily on Nova Drift's upgrade system.",
   "dependencies": [
